@@ -21,6 +21,9 @@ import android.support.v4.media.session.PlaybackStateCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.ServiceCompat
+import androidx.car.app.connection.CarConnection
+import androidx.lifecycle.LiveData
+import androidx.lifecycle.Observer
 import androidx.media.MediaBrowserServiceCompat
 import androidx.media.VolumeProviderCompat
 import androidx.media.app.NotificationCompat.MediaStyle
@@ -142,8 +145,65 @@ class PlaybackService : MediaBrowserServiceCompat() {
         }
         sessionToken = session.sessionToken
         createChannel()
+        // Android Auto connected or not: the car lyrics and their button only show while it is.
+        runCatching { CarConnection(this).type.also { it.observeForever(carObserver) } }
+            .onSuccess { carType = it }
+            .onFailure { Logbook.log("car connection not watched: ${it.javaClass.simpleName} ${it.message?.take(80)}") }
         current?.let { apply(it) }
         applyQueue()
+    }
+
+    /**
+     * Two signs of the car, either one is enough: Android Auto's own connection state ([carLinked],
+     * from CarConnection: it also tells when the car leaves) and Android Auto seen using this service
+     * ([carSeen]: browsing the library, a button pressed in the car). A media browser never says when
+     * one client leaves, so [carSeen] ends when CarConnection says the car left, or after
+     * [CAR_IDLE_MS] without sound (CarConnection silent on some phones would leave it on for good).
+     */
+    private var carLinked = false
+    private var carSeen = false
+    private var carType: LiveData<Int>? = null
+    private val carObserver = Observer<Int> { type ->
+        val linked = type != CarConnection.CONNECTION_TYPE_NOT_CONNECTED
+        if (linked == carLinked) return@Observer
+        // Android Auto's word that the car left also ends the car seen through the library.
+        setCar(linked = linked, seen = linked && carSeen, why = "car connection")
+    }
+
+    private fun setCar(linked: Boolean = carLinked, seen: Boolean = carSeen, why: String) {
+        carLinked = linked
+        carSeen = seen
+        scheduleForgetCar()
+        val on = linked || seen
+        if (on == carConnected) return
+        carConnected = on
+        Logbook.log("car ${if (on) "connected" else "disconnected"} ($why)")
+        carLyricsChanged()
+    }
+
+    /** [pkg] used this service (a browse, a command): when it is Android Auto, the car is there. */
+    private fun noteCarClient(pkg: String?, how: String) {
+        if (pkg == null || pkg !in CAR_HOSTS) return
+        if (carSeen) scheduleForgetCar() else setCar(seen = true, why = how)
+    }
+
+    /** The package behind the media session command being handled, if any. */
+    private fun commandCaller(): String? = runCatching { session.currentControllerInfo.packageName }.getOrNull()
+
+    private val forgetCar = Runnable {
+        if (current?.makesSound != true) setCar(seen = false, why = "no sound for ${CAR_IDLE_MS / 60_000} min")
+    }
+
+    /** A car seen through the library is forgotten after [CAR_IDLE_MS] without sound; sound holds it. */
+    private fun scheduleForgetCar() {
+        handler.removeCallbacks(forgetCar)
+        if (carSeen && current?.makesSound != true) handler.postDelayed(forgetCar, CAR_IDLE_MS)
+    }
+
+    /** The car connected or left, or the lyrics were switched: the app is asked for the lines, the car redrawn. */
+    private fun carLyricsChanged() {
+        onCarLyricsWanted?.invoke()
+        current?.let { apply(it) }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -172,6 +232,10 @@ class PlaybackService : MediaBrowserServiceCompat() {
 
     override fun onDestroy() {
         instance = null
+        carType?.removeObserver(carObserver)
+        carConnected = false
+        handler.removeCallbacks(lyricTick)
+        handler.removeCallbacks(forgetCar)
         holdLocks(false)
         session.release()
         scope.cancel()
@@ -218,6 +282,7 @@ class PlaybackService : MediaBrowserServiceCompat() {
     /** Runs a system command on the app's player; a command with nobody to take it is logged, not lost silently. */
     private inline fun command(name: String, wake: Boolean = true, run: PlaybackControls.() -> Unit) {
         Logbook.log("media session: $name")
+        noteCarClient(commandCaller(), "Android Auto command")
         if (wake) ensureStarted()
         val c = controls
         if (c == null) android.util.Log.w("Myspoti", "media session: $name dropped, the player is not attached yet") else c.run()
@@ -271,9 +336,15 @@ class PlaybackService : MediaBrowserServiceCompat() {
             if (query.isBlank()) play() else playFromSearch(query)
         }
         override fun onCustomAction(action: String, extras: Bundle?) {
+            noteCarClient(commandCaller(), "Android Auto button")
             when (action) {
                 ACTION_LIKE -> command("like", wake = false) { setLiked(!(current?.liked ?: false)) }
                 ACTION_SHUFFLE -> command("shuffle", wake = false) { setShuffle(!(current?.shuffle ?: false)) }
+                ACTION_LYRICS -> {
+                    val on = !showsCarLyrics(this@PlaybackService)
+                    Logbook.log("media session: car lyrics ${if (on) "on" else "off"}")
+                    setShowsCarLyrics(this@PlaybackService, on)
+                }
             }
         }
     }
@@ -290,10 +361,92 @@ class PlaybackService : MediaBrowserServiceCompat() {
         if (info.coverUrl != lastCoverUrl || (cover == null && !info.coverUrl.isNullOrBlank() && coverJob?.isActive != true)) {
             loadCover(info.coverUrl)
         }
+        applied = info
+        shownLine = lyricLineNow(info)
+        applyMetadata(info)
+        val state = when {
+            info.buffering && info.playing -> PlaybackStateCompat.STATE_BUFFERING
+            info.playing -> PlaybackStateCompat.STATE_PLAYING
+            else -> PlaybackStateCompat.STATE_PAUSED
+        }
+        val lyricsOn = showsCarLyrics(this)
+        session.setShuffleMode(if (info.shuffle) PlaybackStateCompat.SHUFFLE_MODE_ALL else PlaybackStateCompat.SHUFFLE_MODE_NONE)
+        session.setPlaybackState(PlaybackStateCompat.Builder()
+            .setActions(if (info.episode) ACTIONS or SKIP_ACTIONS else ACTIONS)
+            // Like on the left of previous / play / next, shuffle on the right: five buttons, so
+            // play / pause sits in the middle (lock screen, Samsung Now Bar, Android 13+ shade).
+            .addCustomAction(ACTION_LIKE, getString(if (info.liked) R.string.msp_unlike else R.string.msp_like),
+                if (info.liked) R.drawable.msp_ic_liked else R.drawable.msp_ic_like)
+            .apply {
+                // The car lyrics' switch, only while Android Auto is connected (the phone keeps its five
+                // buttons), before shuffle: a small car screen moves the last custom button to its overflow.
+                if (carConnected && !info.episode) addCustomAction(ACTION_LYRICS,
+                    getString(if (lyricsOn) R.string.msp_lyrics_hide else R.string.msp_lyrics_show),
+                    if (lyricsOn) R.drawable.msp_ic_lyrics_on else R.drawable.msp_ic_lyrics)
+            }
+            .addCustomAction(ACTION_SHUFFLE, getString(if (info.shuffle) R.string.msp_shuffle_off else R.string.msp_shuffle_on),
+                if (info.shuffle) R.drawable.msp_ic_shuffle_on else R.drawable.msp_ic_shuffle)
+            .setState(state, info.positionMs, if (info.playing && !info.buffering) 1f else 0f)
+            .setActiveQueueItemId(QueueSync.activeRow(queue, activeQueueId, info.title, info.artist))
+            .build())
+        scheduleLyricTick(info)
+    }
+
+    /** The last state given to the session, its cover made large (see [apply]). */
+    private var applied: NowPlayingInfo? = null
+
+    /** The car's lyric line now shown ([CarLyrics.indexAt]), or [CarLyrics.OFF]: the song's title and artist. */
+    private var shownLine = CarLyrics.OFF
+
+    private val lyricTick = Runnable { refreshLyricLine() }
+
+    /** The lines the car shows for [info], or null: no car, switched off, an ad or an episode, or no synced lyrics yet. */
+    private fun carLyricsFor(info: NowPlayingInfo): List<CarLyricLine>? {
+        if (!carConnected || info.episode || info.id == NowPlayingInfo.AD_ID || !showsCarLyrics(this)) return null
+        val (id, lines) = carLyrics ?: return null
+        return lines.takeIf { id == info.id && it.isNotEmpty() }
+    }
+
+    /** Where the song is now: the last pushed position, moved on by the time since while it plays. */
+    private fun positionNow(info: NowPlayingInfo): Long =
+        if (info.playing && !info.buffering) info.positionMs + (android.os.SystemClock.elapsedRealtime() - currentAt) else info.positionMs
+
+    private fun lyricLineNow(info: NowPlayingInfo): Int {
+        val lines = carLyricsFor(info) ?: return CarLyrics.OFF
+        return CarLyrics.indexAt(lines, positionNow(info) + CarLyrics.LEAD_MS)
+    }
+
+    /** Puts the line sung now in the car when it changed, and waits for the next one. */
+    private fun refreshLyricLine() {
+        handler.removeCallbacks(lyricTick)
+        val raw = current ?: return
+        // What the session holds: [update] applies any change but the position at once.
+        val info = applied ?: return
+        val line = lyricLineNow(raw)
+        if (line != shownLine) {
+            shownLine = line
+            applyMetadata(info)
+        }
+        scheduleLyricTick(raw)
+    }
+
+    private fun scheduleLyricTick(info: NowPlayingInfo) {
+        handler.removeCallbacks(lyricTick)
+        if (!info.playing || info.buffering || shownLine == CarLyrics.OFF) return
+        val lines = carLyricsFor(info) ?: return
+        val wait = CarLyrics.untilNext(lines, shownLine, positionNow(info) + CarLyrics.LEAD_MS) ?: return
+        // Checked again at least every few seconds: the pushed position is the truth, not this clock.
+        handler.postDelayed(lyricTick, wait.coerceIn(LYRIC_TICK_MIN_MS, LYRIC_TICK_MAX_MS))
+    }
+
+    /** The song's metadata to the session; while the car shows lyrics, the line sung and the next one stand in for the title and the artist. */
+    private fun applyMetadata(info: NowPlayingInfo) {
+        val lines = carLyricsFor(info)
+        val (title, artist) = if (lines != null && shownLine != CarLyrics.OFF) CarLyrics.texts(lines, shownLine) else info.title to info.artist
         val metadata = fun(withArt: Boolean) = (MediaMetadataCompat.Builder()
             .putString(MediaMetadataCompat.METADATA_KEY_MEDIA_ID, info.id)
-            .putString(MediaMetadataCompat.METADATA_KEY_TITLE, info.title)
-            .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, info.artist)
+            .putString(MediaMetadataCompat.METADATA_KEY_TITLE, title)
+            .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, artist)
             .putString(MediaMetadataCompat.METADATA_KEY_ALBUM, info.album)
             .putString(MediaMetadataCompat.METADATA_KEY_ALBUM_ART_URI, info.coverUrl)
             .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, info.durationMs)
@@ -308,23 +461,6 @@ class PlaybackService : MediaBrowserServiceCompat() {
             android.util.Log.w("Myspoti", "session art rejected, metadata without it: $it")
             session.setMetadata(metadata(false))
         }
-        val state = when {
-            info.buffering && info.playing -> PlaybackStateCompat.STATE_BUFFERING
-            info.playing -> PlaybackStateCompat.STATE_PLAYING
-            else -> PlaybackStateCompat.STATE_PAUSED
-        }
-        session.setShuffleMode(if (info.shuffle) PlaybackStateCompat.SHUFFLE_MODE_ALL else PlaybackStateCompat.SHUFFLE_MODE_NONE)
-        session.setPlaybackState(PlaybackStateCompat.Builder()
-            .setActions(if (info.episode) ACTIONS or SKIP_ACTIONS else ACTIONS)
-            // Like on the left of previous / play / next, shuffle on the right: five buttons, so
-            // play / pause sits in the middle (lock screen, Samsung Now Bar, Android 13+ shade).
-            .addCustomAction(ACTION_LIKE, getString(if (info.liked) R.string.msp_unlike else R.string.msp_like),
-                if (info.liked) R.drawable.msp_ic_liked else R.drawable.msp_ic_like)
-            .addCustomAction(ACTION_SHUFFLE, getString(if (info.shuffle) R.string.msp_shuffle_off else R.string.msp_shuffle_on),
-                if (info.shuffle) R.drawable.msp_ic_shuffle_on else R.drawable.msp_ic_shuffle)
-            .setState(state, info.positionMs, if (info.playing && !info.buffering) 1f else 0f)
-            .setActiveQueueItemId(QueueSync.activeRow(queue, activeQueueId, info.title, info.artist))
-            .build())
     }
 
     /** The pushed queue ([updateQueue]) to the session; the row now playing is marked in the playback state. */
@@ -480,6 +616,8 @@ class PlaybackService : MediaBrowserServiceCompat() {
                 runCatching { NotificationManagerCompat.from(this).notify(NOTIFICATION_ID, notification) }
             }
         }
+        // Sound holds a car seen through the library; silence starts its countdown.
+        scheduleForgetCar()
     }
 
     /** [always]: call startForeground() even when already in the foreground (a new foreground start). */
@@ -564,6 +702,7 @@ class PlaybackService : MediaBrowserServiceCompat() {
         val packages = runCatching { packageManager.getPackagesForUid(clientUid)?.toList() }.getOrNull().orEmpty()
         if (clientPackageName != packageName && clientPackageName !in packages) return null
         if (clientPackageName != packageName) Logbook.log("media browser connected: $clientPackageName (browse: ${if (mayBrowse(clientPackageName)) "yes" else "no"})")
+        noteCarClient(clientPackageName, "Android Auto in the library")
         if (!mayBrowse(clientPackageName)) {
             android.util.Log.w("Myspoti", "media browser: empty root for $clientPackageName")
             return BrowserRoot(EMPTY_ROOT_ID, null)
@@ -636,7 +775,9 @@ class PlaybackService : MediaBrowserServiceCompat() {
     private fun callerMayBrowse(): Boolean {
         val caller = runCatching { currentBrowserInfo }.getOrNull() ?: return false
         val packages = runCatching { packageManager.getPackagesForUid(caller.uid)?.toList() }.getOrNull().orEmpty()
-        return caller.packageName in packages && mayBrowse(caller.packageName)
+        if (caller.packageName !in packages) return false
+        noteCarClient(caller.packageName, "Android Auto browsing")
+        return mayBrowse(caller.packageName)
     }
 
     companion object {
@@ -662,6 +803,48 @@ class PlaybackService : MediaBrowserServiceCompat() {
         fun setSkipsOnEpisodes(context: Context, on: Boolean) =
             context.getSharedPreferences(CLOSE_PREFS, Context.MODE_PRIVATE).edit().putBoolean(SKIP_KEY, on).apply()
 
+        private const val CAR_LYRICS_KEY = "car_lyrics"
+
+        /** Android Auto shows the line sung and the next one in place of the title (default); off: the song. */
+        fun showsCarLyrics(context: Context): Boolean =
+            context.getSharedPreferences(CLOSE_PREFS, Context.MODE_PRIVATE).getBoolean(CAR_LYRICS_KEY, true)
+
+        /** From the settings or the car's lyrics button; the car redraws at once. */
+        fun setShowsCarLyrics(context: Context, on: Boolean) {
+            context.getSharedPreferences(CLOSE_PREFS, Context.MODE_PRIVATE).edit().putBoolean(CAR_LYRICS_KEY, on).apply()
+            val svc = instance
+            if (svc == null) onCarLyricsWanted?.invoke() else svc.handler.post { svc.carLyricsChanged() }
+        }
+
+        /** Android Auto is connected (watched by the running service). */
+        @Volatile var carConnected = false
+            private set
+
+        /** The app should send the playing song's lines ([updateCarLyrics]): the car is there and the lyrics are on. */
+        fun wantsCarLyrics(context: Context): Boolean = carConnected && showsCarLyrics(context)
+
+        /** Called on the main thread when [wantsCarLyrics] may have changed. Set once by the app. */
+        @Volatile var onCarLyricsWanted: (() -> Unit)? = null
+
+        /** The lines of the song [NowPlayingInfo.id] the car may show (see [updateCarLyrics]). */
+        @Volatile private var carLyrics: Pair<String, List<CarLyricLine>>? = null
+
+        /** Pushes the synced lines of the song [id] (empty: it has none); the car shows them while that song plays. */
+        fun updateCarLyrics(id: String, lines: List<CarLyricLine>) {
+            carLyrics = id to lines.sortedBy { it.timeMs }
+            instance?.let { svc -> svc.handler.post { current?.let { svc.apply(it) } } }
+        }
+
+        /** A car seen only through the library ([carSeen]) is forgotten after this long without sound. */
+        private const val CAR_IDLE_MS = 5 * 60_000L
+
+        /** Android Auto: its use of this service means a car is connected. */
+        private val CAR_HOSTS = setOf("com.google.android.projection.gearhead")
+
+        /** Between two car lyrics checks: never a busy loop, never long out of step after a seek. */
+        private const val LYRIC_TICK_MIN_MS = 50L
+        private const val LYRIC_TICK_MAX_MS = 5_000L
+
         const val ROOT_ID = "root"
         /** Root for callers that may control playback but not browse (see onGetRoot). */
         private const val EMPTY_ROOT_ID = "empty"
@@ -672,6 +855,7 @@ class PlaybackService : MediaBrowserServiceCompat() {
         private const val NOTIFICATION_ID = 1
         private const val ACTION_LIKE = "like"
         private const val ACTION_SHUFFLE = "shuffle"
+        private const val ACTION_LYRICS = "car_lyrics"
         /** Everything the car, the lock screen and the notification may ask for. */
         private val ACTIONS = PlaybackStateCompat.ACTION_PLAY or PlaybackStateCompat.ACTION_PAUSE or PlaybackStateCompat.ACTION_PLAY_PAUSE or
             PlaybackStateCompat.ACTION_SKIP_TO_NEXT or PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS or
@@ -690,6 +874,8 @@ class PlaybackService : MediaBrowserServiceCompat() {
 
         @Volatile private var instance: PlaybackService? = null
         @Volatile private var current: NowPlayingInfo? = null
+        /** When [current] was pushed (elapsed realtime): its position is from then. */
+        @Volatile private var currentAt = 0L
         /** The queue the car shows, kept like [current] until the session exists (see [updateQueue]). */
         @Volatile private var queue: List<QueueEntry> = emptyList()
         @Volatile private var queueTitle: String? = null
@@ -734,6 +920,7 @@ class PlaybackService : MediaBrowserServiceCompat() {
         fun update(context: Context, info: NowPlayingInfo) {
             val before = current
             current = info
+            currentAt = android.os.SystemClock.elapsedRealtime()
             val svc = instance
             if (svc == null) {
                 // Loading counts: Android gives the audio only to a player in the foreground, and a
@@ -748,7 +935,11 @@ class PlaybackService : MediaBrowserServiceCompat() {
             // position in between (the known state is republished every POSITION_REPUSH_MS).
             if (before != null && before.sameAs(info) &&
                 kotlin.math.abs(info.positionMs - before.positionMs) < POSITION_REPUSH_MS
-            ) return
+            ) {
+                // The car's lyric line follows every position (a seek, a song running late), not only the republished ones.
+                if (carConnected) { svc.handler.removeCallbacks(svc.lyricTick); svc.handler.post(svc.lyricTick) }
+                return
+            }
             svc.apply(info)
             svc.show(info)
             // Sound with no foreground service (bound by the car only, promotion refused): start it.

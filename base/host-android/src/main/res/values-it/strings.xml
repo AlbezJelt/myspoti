@@ -11,4 +11,6 @@
     <string name="msp_channel_playback">Riproduzione</string>
     <string name="msp_back_15">Indietro di 15 secondi</string>
     <string name="msp_forward_15">Avanti di 15 secondi</string>
+    <string name="msp_lyrics_show">Mostra testo</string>
+    <string name="msp_lyrics_hide">Nascondi testo</string>
 </resources>

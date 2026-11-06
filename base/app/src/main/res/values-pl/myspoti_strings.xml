@@ -602,6 +602,8 @@
     <string name="settings_look_title">Wygląd</string>
     <string name="settings_headset_skip_title">Przyciski słuchawek: 15 s w podcastach</string>
     <string name="settings_headset_skip_detail">Gdy wyłączone, przechodzą do następnego lub poprzedniego odcinka</string>
+    <string name="settings_car_lyrics_title">Tekst w Android Auto</string>
+    <string name="settings_car_lyrics_detail">Śpiewana linijka i następna zamiast tytułu. Przycisk tekstu w samochodzie go ukrywa</string>
     <string name="settings_connect_mirror_title">Liczenie odtworzeń z rozszerzeń w Spotify</string>
     <string name="settings_download_sync_title">Synchronizuj pobrane utwory ze Spotify</string>
     <string name="settings_download_sync_detail">Gdy jesteś online, pobrany utwór gra też bez dźwięku na Spotify: odsłuchanie jest liczone, a Twoje urządzenia go widzą i mogą nim sterować. Wyłączone: pobrane utwory grają tylko z telefonu.</string>

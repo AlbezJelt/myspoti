@@ -11,4 +11,6 @@
     <string name="msp_channel_playback">播放</string>
     <string name="msp_back_15">后退 15 秒</string>
     <string name="msp_forward_15">快进 15 秒</string>
+    <string name="msp_lyrics_show">显示歌词</string>
+    <string name="msp_lyrics_hide">隐藏歌词</string>
 </resources>

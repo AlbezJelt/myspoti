@@ -618,6 +618,8 @@
     <string name="look_offer_note">You can change it later in Settings > Display and language.</string>
     <string name="settings_headset_skip_title">Headphone buttons skip 15 s on podcasts</string>
     <string name="settings_headset_skip_detail">When off, they go to the next or previous episode</string>
+    <string name="settings_car_lyrics_title">Lyrics in Android Auto</string>
+    <string name="settings_car_lyrics_detail">The line being sung and the next one in place of the title. The lyrics button in the car hides them</string>
     <string name="settings_connect_mirror_title">Count extension plays on Spotify</string>
     <string name="settings_download_sync_title">Sync downloaded songs with Spotify</string>
     <string name="settings_download_sync_detail">When you\'re online, a downloaded song also plays muted on Spotify, so it counts and your devices see and control it. Off, downloads play only from the phone.</string>

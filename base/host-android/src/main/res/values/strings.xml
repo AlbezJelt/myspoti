@@ -11,4 +11,6 @@
     <string name="msp_channel_playback">Playback</string>
     <string name="msp_back_15">Back 15 seconds</string>
     <string name="msp_forward_15">Forward 15 seconds</string>
+    <string name="msp_lyrics_show">Show lyrics</string>
+    <string name="msp_lyrics_hide">Hide lyrics</string>
 </resources>

@@ -11,4 +11,6 @@
     <string name="msp_channel_playback">Lecture</string>
     <string name="msp_back_15">Reculer de 15 secondes</string>
     <string name="msp_forward_15">Avancer de 15 secondes</string>
+    <string name="msp_lyrics_show">Afficher les paroles</string>
+    <string name="msp_lyrics_hide">Masquer les paroles</string>
 </resources>

@@ -621,6 +621,9 @@ object SongPlayer {
             shuffle = isShuffleOn(),
             episode = !ad && isEpisode,
         ))
+        // Android Auto's lyric lines (fetched only while the car is connected and they are on).
+        CarLyricsFeed.onSong(_nowPlaying.value.uri,
+            if (ad || isEpisode) null else song?.let(::lyricsTrack) ?: currentLyricsTrack())
         com.music.spotui.widget.NowPlayingWidget.show(Graph.app,
             title = title,
             artist = artist,

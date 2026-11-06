@@ -591,6 +591,8 @@
     <string name="look_offer_note">Du kannst es später unter Einstellungen &gt; Anzeige und Sprache ändern.</string>
     <string name="settings_headset_skip_title">Kopfhörertasten springen 15 s bei Podcasts</string>
     <string name="settings_headset_skip_detail">Aus: sie wechseln zur nächsten oder vorherigen Folge</string>
+    <string name="settings_car_lyrics_title">Songtext in Android Auto</string>
+    <string name="settings_car_lyrics_detail">Die gesungene Zeile und die nächste statt des Titels. Die Songtext-Taste im Auto blendet ihn aus</string>
     <string name="settings_connect_mirror_title">Erweiterungs-Wiedergaben bei Spotify zählen</string>
     <string name="settings_download_sync_title">Heruntergeladene Titel mit Spotify synchronisieren</string>
     <string name="settings_download_sync_detail">Wenn du online bist, läuft ein heruntergeladener Titel auch stumm auf Spotify: Er wird gezählt und deine Geräte sehen und steuern ihn. Aus: Downloads laufen nur auf dem Handy.</string>

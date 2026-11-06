@@ -602,6 +602,8 @@
     <string name="look_offer_note">Você pode mudar isso depois em Configurações > Exibição e idioma.</string>
     <string name="settings_headset_skip_title">Os botões do fone pulam 15 s nos podcasts</string>
     <string name="settings_headset_skip_detail">Desativado: eles vão para o episódio seguinte ou anterior</string>
+    <string name="settings_car_lyrics_title">Letra no Android Auto</string>
+    <string name="settings_car_lyrics_detail">A linha cantada e a próxima no lugar do título. O botão de letra no carro a esconde</string>
     <string name="settings_connect_mirror_title">Contar reproduções de extensões no Spotify</string>
     <string name="settings_download_sync_title">Sincronizar as músicas baixadas com o Spotify</string>
     <string name="settings_download_sync_detail">Quando você está online, uma música baixada também toca sem som no Spotify: ela é contada e seus dispositivos a veem e controlam. Desativado, os downloads tocam só no celular.</string>

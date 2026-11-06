@@ -11,4 +11,6 @@
     <string name="msp_channel_playback">Odtwarzanie</string>
     <string name="msp_back_15">Cofnij o 15 sekund</string>
     <string name="msp_forward_15">Przewiń o 15 sekund</string>
+    <string name="msp_lyrics_show">Pokaż tekst</string>
+    <string name="msp_lyrics_hide">Ukryj tekst</string>
 </resources>

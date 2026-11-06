@@ -22,6 +22,8 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.webkit)
     implementation(libs.androidx.media)
+    implementation(libs.androidx.car.app)
+    implementation(libs.lifecycle.livedata.core)
     implementation(libs.serialization.json)
     implementation(libs.okhttp)
     implementation(libs.okhttp.brotli)

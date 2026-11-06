@@ -8,6 +8,10 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- CarConnection (the car lyrics): Android Auto's connection state, read from its provider. -->
+    <queries>
+        <provider android:authorities="androidx.car.app.connection" />
+    </queries>
     <application>
         <service
             android:name="app.myspoti.host.android.PlaybackService"

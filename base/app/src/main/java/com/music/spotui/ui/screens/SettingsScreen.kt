@@ -209,6 +209,13 @@ fun SettingsScreen(navController: NavController) {
                 checked = headsetSkip,
                 onChecked = { headsetSkip = it; app.myspoti.host.android.PlaybackService.setSkipsOnEpisodes(ctx, it) },
             )
+            var carLyrics by remember { mutableStateOf(app.myspoti.host.android.PlaybackService.showsCarLyrics(ctx)) }
+            OptionRow(
+                label = stringResource(R.string.settings_car_lyrics_title),
+                detail = stringResource(R.string.settings_car_lyrics_detail),
+                checked = carLyrics,
+                onChecked = { carLyrics = it; app.myspoti.host.android.PlaybackService.setShowsCarLyrics(ctx, it) },
+            )
             // What other devices see of this phone, and a Jam joined here.
             Section(R.string.settings_section_connect)
             // Songs an extension streams, played by Spotify too (unheard): counted there, seen by Connect.

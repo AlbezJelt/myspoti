@@ -563,6 +563,8 @@
     <string name="look_offer_note">Você pode mudar depois em Configurações &gt; Tela e idioma.</string>
     <string name="settings_headset_skip_title">Botões dos auscultadores: 15 s nos podcasts</string>
     <string name="settings_headset_skip_detail">Desativado: passam ao episódio seguinte ou anterior</string>
+    <string name="settings_car_lyrics_title">Letra no Android Auto</string>
+    <string name="settings_car_lyrics_detail">A linha cantada e a seguinte em vez do título. O botão de letra no carro esconde-a</string>
     <string name="settings_connect_mirror_title">Contar no Spotify o que tocas com extensões</string>
     <string name="settings_connect_mirror_detail">Reproduz a música do Spotify sem som em segundo plano, para que conte e os seus dispositivos a possam controlar. Usa um pouco mais de dados e bateria: desative se não precisar.</string>
     <string name="explicit_badge">E</string>

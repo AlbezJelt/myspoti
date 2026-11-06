@@ -321,6 +321,7 @@ private fun PlaybackPage(navController: NavController, open: (SettingsPage) -> U
     val label = { q: StreamingQuality -> StreamingChoices.first { it.first == q }.second }
     var headsetSkip by remember { mutableStateOf(app.myspoti.host.android.PlaybackService.skipsOnEpisodes(ctx)) }
     var keepPlaying by remember { mutableStateOf(app.myspoti.host.android.PlaybackService.keepsPlayingOnClose(ctx)) }
+    var carLyrics by remember { mutableStateOf(app.myspoti.host.android.PlaybackService.showsCarLyrics(ctx)) }
     val crossfade = com.music.spotui.data.preferences.CrossfadePref.seconds
     // The first source of the audio order, when it is an extension announcing settings here:
     // they show, and Spotify's quality (kept, still used for what Spotify plays) leaves the screen.
@@ -390,6 +391,13 @@ private fun PlaybackPage(navController: NavController, open: (SettingsPage) -> U
                     stringResource(R.string.settings_headset_skip_title), checked = headsetSkip,
                     onChecked = { headsetSkip = it; app.myspoti.host.android.PlaybackService.setSkipsOnEpisodes(ctx, it) },
                     detail = stringResource(R.string.settings_headset_skip_detail),
+                )
+            }
+            row {
+                ImmersiveSwitchRow(
+                    stringResource(R.string.settings_car_lyrics_title), checked = carLyrics,
+                    onChecked = { carLyrics = it; app.myspoti.host.android.PlaybackService.setShowsCarLyrics(ctx, it) },
+                    detail = stringResource(R.string.settings_car_lyrics_detail),
                 )
             }
         }

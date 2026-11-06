@@ -591,6 +591,8 @@
     <string name="look_offer_note">Puoi cambiarlo più tardi in Impostazioni &gt; Schermo e lingua.</string>
     <string name="settings_headset_skip_title">Tasti delle cuffie: 15 s nei podcast</string>
     <string name="settings_headset_skip_detail">Disattivato: passano all\'episodio successivo o precedente</string>
+    <string name="settings_car_lyrics_title">Testo in Android Auto</string>
+    <string name="settings_car_lyrics_detail">La riga cantata e la successiva al posto del titolo. Il pulsante testo in auto lo nasconde</string>
     <string name="settings_connect_mirror_title">Conta su Spotify gli ascolti delle estensioni</string>
     <string name="settings_download_sync_title">Sincronizza i brani scaricati con Spotify</string>
     <string name="settings_download_sync_detail">Quando sei online, un brano scaricato viene riprodotto anche in muto su Spotify: l\'ascolto viene contato e i tuoi dispositivi lo vedono e lo controllano. Disattivato, i download vengono riprodotti solo dal telefono.</string>

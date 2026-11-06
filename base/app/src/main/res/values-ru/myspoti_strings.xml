@@ -602,6 +602,8 @@
     <string name="settings_look_title">Оформление</string>
     <string name="settings_headset_skip_title">Кнопки наушников: 15 с в подкастах</string>
     <string name="settings_headset_skip_detail">Если выключено, переключают на следующий или предыдущий выпуск</string>
+    <string name="settings_car_lyrics_title">Текст в Android Auto</string>
+    <string name="settings_car_lyrics_detail">Текущая строка и следующая вместо названия. Кнопка текста в машине скрывает его</string>
     <string name="settings_connect_mirror_title">Учитывать прослушивания расширений в Spotify</string>
     <string name="settings_download_sync_title">Синхронизировать скачанные треки со Spotify</string>
     <string name="settings_download_sync_detail">В сети скачанный трек также беззвучно играет в Spotify: прослушивание засчитывается, а ваши устройства видят его и могут им управлять. Если выключено, скачанное играет только с телефона.</string>

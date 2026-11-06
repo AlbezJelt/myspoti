@@ -153,13 +153,51 @@ class PlaybackService : MediaBrowserServiceCompat() {
         applyQueue()
     }
 
+    /**
+     * Two signs of the car, either one is enough: Android Auto's own connection state ([carLinked],
+     * from CarConnection: it also tells when the car leaves) and Android Auto seen using this service
+     * ([carSeen]: browsing the library, a button pressed in the car). A media browser never says when
+     * one client leaves, so [carSeen] ends when CarConnection says the car left, or after
+     * [CAR_IDLE_MS] without sound (CarConnection silent on some phones would leave it on for good).
+     */
+    private var carLinked = false
+    private var carSeen = false
     private var carType: LiveData<Int>? = null
     private val carObserver = Observer<Int> { type ->
-        val on = type != CarConnection.CONNECTION_TYPE_NOT_CONNECTED
-        if (on == carConnected) return@Observer
+        val linked = type != CarConnection.CONNECTION_TYPE_NOT_CONNECTED
+        if (linked == carLinked) return@Observer
+        // Android Auto's word that the car left also ends the car seen through the library.
+        setCar(linked = linked, seen = linked && carSeen, why = "car connection")
+    }
+
+    private fun setCar(linked: Boolean = carLinked, seen: Boolean = carSeen, why: String) {
+        carLinked = linked
+        carSeen = seen
+        scheduleForgetCar()
+        val on = linked || seen
+        if (on == carConnected) return
         carConnected = on
-        Logbook.log("car ${if (on) "connected" else "disconnected"}")
+        Logbook.log("car ${if (on) "connected" else "disconnected"} ($why)")
         carLyricsChanged()
+    }
+
+    /** [pkg] used this service (a browse, a command): when it is Android Auto, the car is there. */
+    private fun noteCarClient(pkg: String?, how: String) {
+        if (pkg == null || pkg !in CAR_HOSTS) return
+        if (carSeen) scheduleForgetCar() else setCar(seen = true, why = how)
+    }
+
+    /** The package behind the media session command being handled, if any. */
+    private fun commandCaller(): String? = runCatching { session.currentControllerInfo.packageName }.getOrNull()
+
+    private val forgetCar = Runnable {
+        if (current?.makesSound != true) setCar(seen = false, why = "no sound for ${CAR_IDLE_MS / 60_000} min")
+    }
+
+    /** A car seen through the library is forgotten after [CAR_IDLE_MS] without sound; sound holds it. */
+    private fun scheduleForgetCar() {
+        handler.removeCallbacks(forgetCar)
+        if (carSeen && current?.makesSound != true) handler.postDelayed(forgetCar, CAR_IDLE_MS)
     }
 
     /** The car connected or left, or the lyrics were switched: the app is asked for the lines, the car redrawn. */
@@ -197,6 +235,7 @@ class PlaybackService : MediaBrowserServiceCompat() {
         carType?.removeObserver(carObserver)
         carConnected = false
         handler.removeCallbacks(lyricTick)
+        handler.removeCallbacks(forgetCar)
         holdLocks(false)
         session.release()
         scope.cancel()
@@ -243,6 +282,7 @@ class PlaybackService : MediaBrowserServiceCompat() {
     /** Runs a system command on the app's player; a command with nobody to take it is logged, not lost silently. */
     private inline fun command(name: String, wake: Boolean = true, run: PlaybackControls.() -> Unit) {
         Logbook.log("media session: $name")
+        noteCarClient(commandCaller(), "Android Auto command")
         if (wake) ensureStarted()
         val c = controls
         if (c == null) android.util.Log.w("Myspoti", "media session: $name dropped, the player is not attached yet") else c.run()
@@ -296,6 +336,7 @@ class PlaybackService : MediaBrowserServiceCompat() {
             if (query.isBlank()) play() else playFromSearch(query)
         }
         override fun onCustomAction(action: String, extras: Bundle?) {
+            noteCarClient(commandCaller(), "Android Auto button")
             when (action) {
                 ACTION_LIKE -> command("like", wake = false) { setLiked(!(current?.liked ?: false)) }
                 ACTION_SHUFFLE -> command("shuffle", wake = false) { setShuffle(!(current?.shuffle ?: false)) }
@@ -575,6 +616,8 @@ class PlaybackService : MediaBrowserServiceCompat() {
                 runCatching { NotificationManagerCompat.from(this).notify(NOTIFICATION_ID, notification) }
             }
         }
+        // Sound holds a car seen through the library; silence starts its countdown.
+        scheduleForgetCar()
     }
 
     /** [always]: call startForeground() even when already in the foreground (a new foreground start). */
@@ -659,6 +702,7 @@ class PlaybackService : MediaBrowserServiceCompat() {
         val packages = runCatching { packageManager.getPackagesForUid(clientUid)?.toList() }.getOrNull().orEmpty()
         if (clientPackageName != packageName && clientPackageName !in packages) return null
         if (clientPackageName != packageName) Logbook.log("media browser connected: $clientPackageName (browse: ${if (mayBrowse(clientPackageName)) "yes" else "no"})")
+        noteCarClient(clientPackageName, "Android Auto in the library")
         if (!mayBrowse(clientPackageName)) {
             android.util.Log.w("Myspoti", "media browser: empty root for $clientPackageName")
             return BrowserRoot(EMPTY_ROOT_ID, null)
@@ -731,7 +775,9 @@ class PlaybackService : MediaBrowserServiceCompat() {
     private fun callerMayBrowse(): Boolean {
         val caller = runCatching { currentBrowserInfo }.getOrNull() ?: return false
         val packages = runCatching { packageManager.getPackagesForUid(caller.uid)?.toList() }.getOrNull().orEmpty()
-        return caller.packageName in packages && mayBrowse(caller.packageName)
+        if (caller.packageName !in packages) return false
+        noteCarClient(caller.packageName, "Android Auto browsing")
+        return mayBrowse(caller.packageName)
     }
 
     companion object {
@@ -788,6 +834,12 @@ class PlaybackService : MediaBrowserServiceCompat() {
             carLyrics = id to lines.sortedBy { it.timeMs }
             instance?.let { svc -> svc.handler.post { current?.let { svc.apply(it) } } }
         }
+
+        /** A car seen only through the library ([carSeen]) is forgotten after this long without sound. */
+        private const val CAR_IDLE_MS = 5 * 60_000L
+
+        /** Android Auto: its use of this service means a car is connected. */
+        private val CAR_HOSTS = setOf("com.google.android.projection.gearhead")
 
         /** Between two car lyrics checks: never a busy loop, never long out of step after a seek. */
         private const val LYRIC_TICK_MIN_MS = 50L
